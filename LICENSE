@@ -1,0 +1,97 @@
+ASTRAL SOURCE-AVAILABLE LICENSE (VIEW-ONLY)
+Version 1.0 — Copyright (c) 2026 Albani Nur Riziq <albaninurriziq@gmail.com>
+
+In plain language (this summary is not part of the legal terms):
+  YOU MAY      : read, study, run for yourself, and share unmodified copies with credit.
+  YOU MAY NOT  : modify, publish changed versions, sell, or rebrand this project.
+  NO WARRANTY  : it is provided as-is, use at your own risk.
+
+
+1. DEFINITIONS
+   "Work" means the Astral software, its source code, configuration, scripts,
+   documentation, prompts, and any associated files distributed by the Licensor.
+   "Derivative" means any modified, translated, refactored, restructured, subset,
+   extended, or built-upon version of the Work.
+   "Licensor" means Albani Nur Riziq, the author and copyright holder of the Work.
+
+2. GRANT OF RIGHTS
+   Subject to the conditions in Section 3 and the restrictions in Section 4, the
+   Licensor grants every person a free, non-exclusive, non-transferable,
+   worldwide, revocable license to:
+     a) view and read the Work in full;
+     b) study the Work, including how it works, and write about it for
+        education, review, research, or criticism, with attribution;
+     c) download and run the Work, unmodified, for personal, non-commercial use;
+     d) redistribute the Work only as a complete and unmodified copy, or as a
+        link to the official source, together with this license and copyright
+        notice;
+     e) open issues, report bugs, and propose patches or improvements to the
+        Licensor.
+
+3. CONDITIONS
+   Every copy or substantial portion of the Work that you distribute must retain:
+     a) this license text;
+     b) the copyright notice above;
+     c) any "third-party notices" files shipped inside the Work.
+   You may not add or remove legal terms, license headers, or attribution from
+   the Work when sharing it.
+
+4. RESTRICTIONS
+   Without prior written permission from the Licensor, you may NOT:
+     a) modify the Work and then publish, distribute, host, or otherwise make the
+        modified version available to anyone (no forks that are shared publicly
+        outside the official repository);
+     b) sell, sublicense, rent, or commercially exploit the Work or any part of it;
+     c) use the Work, in whole or in part, as a base for a competing or
+        substantially similar product or service;
+     d) remove, obscure, or alter the Licensor's copyright or attribution notices;
+     e) present the Work or any part of it as your own creation;
+     f) apply the name, logo, or "Astral" mark to any modified or unrelated work.
+
+5. CONTRIBUTIONS
+   The project is open to suggestions, bug reports, and proposed changes. By
+   voluntarily submitting a patch, pull request, or other contribution to the
+   Licensor, you grant the Licensor a perpetual, worldwide, irrevocable,
+   royalty-free right to use, reproduce, modify, and distribute that contribution
+   as part of the Work. Submitting a contribution does not grant you, or anyone
+   else, the right to distribute modified versions of the Work.
+
+6. THIRD-PARTY MATERIAL
+   The Work may depend on or embed third-party components (models, libraries,
+   fonts, APIs). Those remain governed by their own licenses. Nothing here grants
+   you rights to third-party material.
+
+7. DISCLAIMER OF WARRANTY
+   THE WORK IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+   INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+   PARTICULAR PURPOSE, AND NON-INFRINGEMENT. THE LICENSOR IS NOT RESPONSIBLE FOR
+   ANY DAMAGE, DATA LOSS, SECURITY INCIDENT, OR COST ARISING FROM YOUR USE OF,
+   INABILITY TO USE, OR MISUSE OF THE WORK — INCLUDING ITS ABILITY TO READ FILES,
+   RUN COMMANDS, AND ACT THROUGH TOOLS ON YOUR MACHINE.
+
+8. LIMITATION OF LIABILITY
+   IN NO EVENT SHALL THE LICENSOR BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER
+   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM,
+   OUT OF, OR IN CONNECTION WITH THE WORK OR THE USE OR OTHER DEALINGS IN THE WORK.
+
+9. TERMINATION
+   This license ends automatically if you break any of its terms. Upon
+   termination you must stop distributing the Work and delete your copies, except
+   for copies you are legally required to keep. Material already distributed in
+   unmodified form under Section 2(d) remains valid for its recipients.
+
+10. RESERVATIONS AND CONTACT
+   All rights not stated in Section 2 are expressly reserved by the Licensor.
+   This is a source-available, view-only license — it is NOT an open-source
+   license under the Open Source Definition, because it does not permit
+   distribution of modified versions.
+   Requests for commercial use, modification rights, or a custom licensing
+   arrangement: albaninurriziq@gmail.com
+
+
+NOTE ON PUBLIC HOSTING (GitHub / GitLab and similar)
+   By placing the Work in a public repository, the hosting platform's terms may
+   additionally allow registered users of that platform to view and "fork" the
+   repository inside the platform. Those platform-level rights do not override
+   Sections 4(a)–(f): a fork may not be published, modified, sold, or reused
+   outside the platform without written permission from the Licensor.

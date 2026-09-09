@@ -1,0 +1,72 @@
+# ---------------------------------------------------------------------------
+# Astral - gitignore
+# Runtime data, caches, credentials, personal notes, and editor/OS noise are
+# never committed.
+# ---------------------------------------------------------------------------
+
+# Python cache and bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Packaging / build output
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Test caches and pytest temp artifacts
+.pytest_cache/
+.pytest-tmp/
+.pytest-tmp*/
+pytest-status-check/
+pytest-of-*/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Local runtime data (memory, todos, calendar) - recreated on first run
+data/
+memory.json
+todos.json
+calendar.json
+*.tmp
+
+# Secrets and credentials (config.py reads everything from env vars)
+.env
+.env.*
+*.env
+secrets.json
+credentials.json
+*.key
+*.pem
+
+# Personal / local-only notes (Indonesian dev log is for reading, not publishing)
+docs/DEVELOPMENT_LOG_ID.md
+*.local.md
+development_log.txt
+
+# Logs
+*.log
+
+# IDE and editor settings
+.idea/
+.vscode/
+*.swp
+*.swo
+*.sublime-workspace
+
+# Local model weights
+*.gguf
+models/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
