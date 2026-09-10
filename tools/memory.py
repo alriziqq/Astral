@@ -55,3 +55,26 @@ def delete_memory(memory_id):
         if len(new) == len(entries): return {"success": False, "error": "Memori tidak ditemukan."}
         _save(new)
     return {"success": True, "id": memory_id}
+
+def update_memory(memory_id, content, category="general", tags=None):
+    if not isinstance(memory_id, str) or not memory_id.strip():
+        raise ValueError("memory_id harus string non-kosong.")
+    if not isinstance(content, str) or not content.strip() or len(content) > 4000:
+        raise ValueError("content harus berupa string 1-4000 karakter.")
+    if tags is None: tags = []
+    if not isinstance(tags, list) or any(not isinstance(x, str) for x in tags):
+        raise ValueError("tags harus array string.")
+    now = datetime.now(timezone.utc).isoformat()
+    with _LOCK:
+        entries = _load()
+        entry = next((item for item in entries if item.get("id") == memory_id), None)
+        if entry is None:
+            return {"success": False, "error": "Memori tidak ditemukan."}
+        entry.update({
+            "content": content.strip(),
+            "category": str(category).strip() or "general",
+            "tags": sorted(set(x.strip().lower() for x in tags if x.strip()))[:20],
+            "updated_at": now,
+        })
+        _save(entries)
+    return {"success": True, "id": memory_id, "updated": True}

@@ -450,9 +450,34 @@ class Agent:
         """Strip schema metadata that does not affect argument validation.
 
         The executor remains the source of truth for validation. Keeping only
-        the name, a short description, types, enums and required fields cuts
+        the name, a tiny description, types, enums and required fields cuts
         repeated tool-schema tokens substantially on OpenAI-compatible APIs.
         """
+        descriptions = {
+            "list_launchable_applications": "Find installed apps.",
+            "desktop_time": "Get local time and timezone.",
+            "create_todo": "Create a todo.",
+            "list_todos": "List todos.",
+            "update_todo": "Update a todo.",
+            "delete_todo": "Delete a todo.",
+            "list_calendar_events": "List calendar events.",
+            "list_applications": "List running processes.",
+            "launch_application": "Launch an app.",
+            "close_application": "Close an app.",
+            "save_memory": "Save a memory.",
+            "search_memories": "Search memories.",
+            "list_memories": "List memories.",
+            "delete_memory": "Delete a memory.",
+            "searxng_search": "Search the web.",
+            "run_shell_command": "Run a PowerShell command.",
+            "list_allowed_directory": "List allowed filesystem roots.",
+            "list_directory": "List directory entries.",
+            "read_file": "Read a file.",
+            "write_file": "Write a file.",
+            "create_directory": "Create a directory.",
+            "delete_file": "Delete a file.",
+            "move_file": "Move a file.",
+        }
         compacted = []
         for tool in tools:
             function = tool.get("function", {})
@@ -465,14 +490,13 @@ class Agent:
                 if isinstance(item.get("items"), dict):
                     item["items"] = {"type": item["items"].get("type", "string")}
                 properties[name] = item
-            description = str(function.get("description", "")).strip()
-            if "." in description:
-                description = description.split(".", 1)[0] + "."
+            name = function.get("name", "")
+            description = descriptions.get(name, "Use this tool.")
             compacted.append({
                 "type": "function",
                 "function": {
-                    "name": function.get("name", ""),
-                    "description": description[:180],
+                    "name": name,
+                    "description": description,
                     "parameters": {
                         "type": "object",
                         "properties": properties,

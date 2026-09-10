@@ -7,6 +7,15 @@
 # Python cache and bytecode
 __pycache__/
 *.py[cod]
+
+# Astral GUI build artifacts
+frontend/node_modules/
+frontend/dist/
+frontend/.vite-cache/
+frontend/tsconfig.tsbuildinfo
+
+# Rust/Tauri build artifacts
+src-tauri/target/
 *$py.class
 
 # Packaging / build output
