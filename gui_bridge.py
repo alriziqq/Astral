@@ -272,8 +272,23 @@ def main() -> None:
             requested_id = str(command.get("id", ""))
             session = next((item for item in _read_json(HISTORY_FILE, []) if item.get("id") == requested_id), None)
             if session:
+                current_session_id = requested_id
                 messages[:] = [{"role": "system", "content": _system_content()}, *session.get("messages", [])]
                 emit({"type": "history_loaded", "id": requested_id, "messages": session.get("messages", [])})
+            continue
+        if kind == "history_delete":
+            requested_id = str(command.get("id", "")).strip()
+            sessions = _read_json(HISTORY_FILE, [])
+            remaining = [item for item in sessions if not (isinstance(item, dict) and str(item.get("id", "")).strip() == requested_id)]
+            if len(remaining) != len(sessions):
+                _write_json(HISTORY_FILE, remaining)
+                if requested_id == current_session_id:
+                    current_session_id = uuid.uuid4().hex
+                    messages[:] = [{"role": "system", "content": _system_content()}]
+                    emit({"type": "session_reset", "session_id": current_session_id})
+                emit({"type": "history_deleted", "id": requested_id, "items": _history_list(), "current_session_id": current_session_id})
+            else:
+                emit({"type": "history_delete_error", "message": "Percakapan tidak ditemukan di history."})
             continue
         if kind == "memory_list":
             emit({"type": "memory_list", "items": list_memories(100)})
