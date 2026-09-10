@@ -18,7 +18,6 @@ from typing import Any
 
 from agent import Agent
 from config import LLM_PROVIDER, PROJECT_ROOT, get_llm_config
-from tools.applications import launch_application, list_launchable_applications
 from tools.memory import delete_memory, list_memories, save_memory, update_memory
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -39,6 +38,8 @@ commands: queue.Queue[dict[str, Any]] = queue.Queue()
 output_lock = threading.Lock()
 pending_permissions: dict[str, dict[str, Any]] = {}
 pending_lock = threading.Lock()
+always_allowed_tools: set[str] = set()
+cancel_request = threading.Event()
 messages: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}]
 request_active = False
 current_provider = LLM_PROVIDER
@@ -73,11 +74,19 @@ def _history_list() -> list[dict[str, Any]]:
 
 
 def _save_session() -> None:
-    user_messages = [item for item in messages if item.get("role") in {"user", "assistant"}]
+    user_messages = []
+    for item in messages:
+        if item.get("role") not in {"user", "assistant"}:
+            continue
+        saved = dict(item)
+        if isinstance(saved.get("content"), list):
+            saved["content"] = "\n".join(part.get("text", "[image attached]") for part in saved["content"] if isinstance(part, dict))
+        user_messages.append(saved)
     if not user_messages:
         return
     sessions = _read_json(HISTORY_FILE, [])
-    title = next((str(item.get("content", "")).strip() for item in user_messages if item.get("role") == "user"), "New chat")[:70]
+    raw_title = next((str(item.get("content", "")).strip() for item in user_messages if item.get("role") == "user"), "New chat")
+    title = raw_title.split("\n\n[", 1)[0].strip()[:70] or "New chat"
     session = {"id": current_session_id, "title": title, "updated_at": datetime.now(timezone.utc).isoformat(), "messages": user_messages}
     sessions = [item for item in sessions if item.get("id") != current_session_id]
     sessions.insert(0, session)
@@ -85,12 +94,16 @@ def _save_session() -> None:
 
 
 def _settings() -> dict[str, str]:
-    return {"personalization": "", "system_prompt": "", **(_read_json(SETTINGS_FILE, {}) or {})}
+    stored = _read_json(SETTINGS_FILE, {}) or {}
+    return {
+        "personalization": str(stored.get("personalization", "")),
+        "system_prompt": str(stored.get("system_prompt", "")).strip() or SYSTEM_PROMPT,
+    }
 
 
 def _system_content() -> str:
     settings = _settings()
-    return SYSTEM_PROMPT + ("\n\nPERSONALIZATION:\n" + settings["personalization"] if settings["personalization"] else "") + ("\n\nADDITIONAL SYSTEM INSTRUCTIONS:\n" + settings["system_prompt"] if settings["system_prompt"] else "")
+    return settings["system_prompt"] + ("\n\nPERSONALIZATION:\n" + settings["personalization"] if settings["personalization"] else "")
 
 
 def emit(payload: dict[str, Any]) -> None:
@@ -162,10 +175,12 @@ class BridgeUI:
 
 
 def confirm_action(name: str, arguments: dict[str, Any]) -> bool:
+    if name in always_allowed_tools:
+        return True
     permission_id = uuid.uuid4().hex
     waiter = threading.Event()
     with pending_lock:
-        pending_permissions[permission_id] = {"event": waiter, "approved": False}
+        pending_permissions[permission_id] = {"event": waiter, "approved": False, "tool": name}
 
     emit({
         "type": "permission_required",
@@ -193,6 +208,7 @@ def create_agent(provider: str | None = None) -> Agent:
         api_key=settings["api_key"],
         model=settings["model"],
         confirm_action=confirm_action,
+        should_stop=cancel_request.is_set,
         ui=BridgeUI(),
     )
 
@@ -200,18 +216,20 @@ def create_agent(provider: str | None = None) -> Agent:
 agent = create_agent()
 
 
-def run_request(text: str) -> None:
+def run_request(content: str | list[dict[str, Any]]) -> None:
     global request_active
     try:
-        messages.append({"role": "user", "content": text})
+        messages.append({"role": "user", "content": content})
         response = agent.process_message(messages, temperature=0.7)
         messages.append({"role": "assistant", "content": response})
         _save_session()
-        emit({"type": "complete", "text": response})
+        emit({"type": "complete", "text": response, "session_id": current_session_id})
+        emit({"type": "history_list", "items": _history_list(), "current_session_id": current_session_id})
     except Exception as error:
         _record_error("Astral mengalami kesalahan.", f"{type(error).__name__}: {error}")
         emit({"type": "error", "message": "Astral mengalami kesalahan.", "detail": f"{type(error).__name__}: {error}"})
     finally:
+        cancel_request.clear()
         request_active = False
 
 
@@ -228,7 +246,9 @@ def read_commands() -> None:
 
 def main() -> None:
     global request_active, agent, current_provider, current_session_id
-    emit({"type": "bridge_ready", "provider": current_provider, "model": agent.model})
+    stored_settings = _read_json(SETTINGS_FILE, {}) or {}
+    always_allowed_tools.update(str(item) for item in stored_settings.get("always_allowed_tools", []) if item)
+    emit({"type": "bridge_ready", "provider": current_provider, "model": agent.model, "session_id": current_session_id})
     threading.Thread(target=read_commands, daemon=True).start()
 
     while True:
@@ -237,6 +257,14 @@ def main() -> None:
 
         if kind == "shutdown":
             return
+        if kind == "cancel_request":
+            cancel_request.set()
+            with pending_lock:
+                for pending in pending_permissions.values():
+                    pending["approved"] = False
+                    pending["event"].set()
+            emit({"type": "request_cancelled"})
+            continue
         if kind == "history_list":
             emit({"type": "history_list", "items": _history_list()})
             continue
@@ -268,7 +296,7 @@ def main() -> None:
             emit({"type": "settings", "settings": _settings()})
             continue
         if kind == "settings_save":
-            settings = {"personalization": str(command.get("personalization", "")), "system_prompt": str(command.get("system_prompt", ""))}
+            settings = {"personalization": str(command.get("personalization", "")), "system_prompt": str(command.get("system_prompt", "")).strip() or SYSTEM_PROMPT, "always_allowed_tools": sorted(always_allowed_tools)}
             _write_json(SETTINGS_FILE, settings)
             messages[0] = {"role": "system", "content": _system_content()}
             emit({"type": "settings", "settings": settings})
@@ -276,28 +304,23 @@ def main() -> None:
         if kind == "error_log":
             emit({"type": "error_log", "items": _read_json(ERROR_LOG_FILE, [])})
             continue
-        if kind == "apps_list":
-            emit({"type": "apps_list", "items": list_launchable_applications(str(command.get("query", "")), 100)})
-            continue
-        if kind == "app_launch":
-            try:
-                emit({"type": "app_launch_result", "result": launch_application(str(command.get("application", "")), command.get("arguments", []))})
-            except Exception as error:
-                _record_error("Aplikasi tidak dapat dibuka.", str(error))
-                emit({"type": "error", "message": "Aplikasi tidak dapat dibuka.", "detail": str(error)})
-            continue
         if kind == "permission_result":
             permission_id = str(command.get("id", ""))
             with pending_lock:
                 pending = pending_permissions.get(permission_id)
                 if pending:
                     pending["approved"] = bool(command.get("approved"))
+                    if command.get("always") and pending["approved"]:
+                        always_allowed_tools.add(str(pending.get("tool", "")))
+                        stored_settings = _read_json(SETTINGS_FILE, {}) or {}
+                        stored_settings["always_allowed_tools"] = sorted(always_allowed_tools)
+                        _write_json(SETTINGS_FILE, stored_settings)
                     pending["event"].set()
             continue
         if kind == "new_chat":
             current_session_id = uuid.uuid4().hex
             messages[:] = [{"role": "system", "content": _system_content()}]
-            emit({"type": "session_reset"})
+            emit({"type": "session_reset", "session_id": current_session_id})
             continue
         if kind == "set_provider":
             if request_active:
@@ -316,9 +339,10 @@ def main() -> None:
                 emit({"type": "busy"})
                 continue
             text = str(command.get("text", "")).strip()
-            if not text:
-                continue
             attachments = command.get("attachments", [])
+            if not text and not attachments:
+                continue
+            image_parts = []
             if attachments:
                 attachment_context = []
                 for item in attachments:
@@ -326,12 +350,15 @@ def main() -> None:
                     if item.get("kind") == "file" and item.get("content"):
                         attachment_context.append(f"\n--- File: {name} ---\n{item['content']}")
                     elif item.get("kind") == "screenshot":
-                        attachment_context.append(f"[Screenshot/image attached: {name}]")
+                        image_parts.append({"type": "image_url", "image_url": {"url": item.get("content", "")}})
+                        attachment_context.append(f"[Image attached: {name}]")
                     else:
                         attachment_context.append(f"[Attachment: {name}]")
                 text += "\n\n" + "\n".join(attachment_context)
             request_active = True
-            threading.Thread(target=run_request, args=(text,), daemon=True).start()
+            cancel_request.clear()
+            content = [{"type": "text", "text": text}, *image_parts] if image_parts else text
+            threading.Thread(target=run_request, args=(content,), daemon=True).start()
 
 
 if __name__ == "__main__":

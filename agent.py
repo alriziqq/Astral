@@ -388,6 +388,7 @@ class Agent:
         temperature=0.4,
         model=LLM_MODEL,
         confirm_action: Optional[Callable[[str, Dict[str, Any]], bool]] = None,
+        should_stop: Optional[Callable[[], bool]] = None,
         ui=None,
     ):
         self.base_url = base_url
@@ -397,6 +398,7 @@ class Agent:
         # Mutating tools are denied unless the CLI (or another host UI)
         # explicitly supplies a confirmation callback.
         self.confirm_action = confirm_action
+        self.should_stop = should_stop
         self.thinking_enabled = True
         # Show model reasoning by default. The CLI can still hide it for a
         # session with `/reasoning off`.
@@ -578,6 +580,9 @@ class Agent:
                         tools=self.active_tools
                     ):
 
+                        if self.should_stop and self.should_stop():
+                            break
+
                         if event.get("type") == "usage":
                             usage_data = event
                             continue
@@ -729,6 +734,10 @@ class Agent:
                                     tool_payload_chars += len(
                                         function_arguments
                                     )
+
+                    if self.should_stop and self.should_stop():
+                        stop_pending_indicator()
+                        return assistant_text
 
                     request_success = True
                     streamed_response = attempt_streamed_response

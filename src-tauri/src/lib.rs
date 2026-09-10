@@ -86,6 +86,25 @@ fn bridge_command(state: State<'_, BridgeState>, command: Value) -> Result<(), S
     write_command(&state, command)
 }
 
+#[tauri::command]
+fn open_external(url: String) -> Result<(), String> {
+    if !(url.starts_with("https://") || url.starts_with("http://")) {
+        return Err("hanya link http/https yang dapat dibuka".to_string());
+    }
+
+    #[cfg(target_os = "windows")]
+    Command::new("explorer.exe").arg(&url).spawn()
+        .map_err(|error| format!("gagal membuka link: {error}"))?;
+    #[cfg(target_os = "macos")]
+    Command::new("open").arg(&url).spawn()
+        .map_err(|error| format!("gagal membuka link: {error}"))?;
+    #[cfg(all(unix, not(target_os = "macos")))]
+    Command::new("xdg-open").arg(&url).spawn()
+        .map_err(|error| format!("gagal membuka link: {error}"))?;
+
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -94,7 +113,7 @@ pub fn run() {
             app.manage(state);
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![send_message, permission_response, reset_session, bridge_status, set_provider, bridge_command])
+        .invoke_handler(tauri::generate_handler![send_message, permission_response, reset_session, bridge_status, set_provider, bridge_command, open_external])
         .run(tauri::generate_context!())
         .expect("error while running Astral");
 }
