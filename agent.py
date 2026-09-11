@@ -28,6 +28,7 @@ from tools.searxng import searxng_search
 from tools.shell import run_shell_command
 from tools.memory import delete_memory, list_memories, save_memory, search_memories
 from tools.applications import close_application, launch_application, list_applications, list_launchable_applications
+from tools.browser import open_chrome, read_connected_chrome, read_webpage
 from tools.planner import create_todo, delete_todo, desktop_time, list_calendar_events, list_todos, update_todo
 
 from tools.filesystem import (
@@ -54,7 +55,7 @@ MUTATING_TOOLS = {
     "delete_file",
     "move_file",
 }
-CONFIRMATION_REQUIRED_TOOLS = MUTATING_TOOLS | {"run_shell_command", "save_memory", "delete_memory", "launch_application", "close_application", "create_todo", "update_todo", "delete_todo"}
+CONFIRMATION_REQUIRED_TOOLS = MUTATING_TOOLS | {"run_shell_command", "save_memory", "delete_memory", "launch_application", "open_chrome", "close_application", "create_todo", "update_todo", "delete_todo", "read_webpage", "read_connected_chrome"}
 
 
 def _object_field(value, name, default=None):
@@ -110,6 +111,9 @@ class Agent:
         {"type":"function","function":{"name":"list_calendar_events","description":"List locally scheduled calendar events, including todos with due dates.","parameters":{"type":"object","properties":{}}}},
         {"type": "function", "function": {"name": "list_applications", "description": "List running Windows processes and their PIDs. Before closing or reporting an app's state, search with query using its executable/app name, then use the exact returned PID or process name; never infer absence from an unfiltered limited list.", "parameters": {"type": "object", "properties": {"limit": {"type": "integer", "minimum": 1, "maximum": 500}, "query": {"type": "string", "description": "Optional executable-name search, e.g. explorer or WhatsApp."}}}}},
         {"type": "function", "function": {"name": "launch_application", "description": "Launch a Windows app by executable, File Explorer alias, or exact Start Menu name. Requires confirmation. Do not use shell as fallback. File Explorer is opened by the Windows shell; use the returned close_target rather than its launcher PID when closing it.", "parameters": {"type": "object", "properties": {"application": {"type": "string"}, "arguments": {"type": "array", "items": {"type": "string"}}}, "required": ["application"]}}},
+        {"type": "function", "function": {"name": "open_chrome", "description": "Open one explicitly requested http(s) URL in the installed Google Chrome app. Requires confirmation.", "parameters": {"type": "object", "properties": {"url": {"type": "string"}}, "required": ["url"]}}},
+        {"type": "function", "function": {"name": "read_webpage", "description": "Open a specific http(s) URL in an isolated Playwright Chromium page and return semantic page content. Compact mode is default to reduce tokens; use detail='full' when the complete extracted text is needed. Requires confirmation.", "parameters": {"type": "object", "properties": {"url": {"type": "string"}, "max_chars": {"type": "integer", "minimum": 1000, "maximum": 30000}, "detail": {"type": "string", "enum": ["compact", "full"]}}, "required": ["url"]}}},
+        {"type": "function", "function": {"name": "read_connected_chrome", "description": "Read the active page from a Chrome instance that the user explicitly launched with local --remote-debugging-port=9222. Compact mode is default to reduce tokens; use detail='full' when needed. Requires confirmation.", "parameters": {"type": "object", "properties": {"cdp_url": {"type": "string"}, "max_chars": {"type": "integer", "minimum": 1000, "maximum": 30000}, "detail": {"type": "string", "enum": ["compact", "full"]}}}}},
         {"type": "function", "function": {"name": "close_application", "description": "Close a running Windows app by PID or exact executable process_name obtained from list_applications. It requests a graceful window close first, then force-stops only remaining processes and verifies the result. Never claim the app closed when success is false. It may lose unsaved work; requires confirmation. For File Explorer, call with process_name='explorer.exe'; this closes Explorer windows without terminating the Windows desktop shell.", "parameters": {"type": "object", "properties": {"pid": {"type": "integer"}, "process_name": {"type":"string"}}}}},
         {"type": "function", "function": {"name": "save_memory", "description": "Save a durable user preference or fact to local long-term memory. Requires confirmation.", "parameters": {"type": "object", "properties": {"content": {"type": "string"}, "category": {"type": "string"}, "tags": {"type": "array", "items": {"type": "string"}}}, "required": ["content"]}}},
         {"type": "function", "function": {"name": "search_memories", "description": "Search local long-term memory for user facts and preferences.", "parameters": {"type": "object", "properties": {"query": {"type": "string"}, "limit": {"type": "integer", "minimum": 1, "maximum": 20}}, "required": ["query"]}}},
@@ -365,6 +369,9 @@ class Agent:
         "list_applications": list_applications,
         "list_launchable_applications": list_launchable_applications,
         "launch_application": launch_application,
+        "open_chrome": open_chrome,
+        "read_webpage": read_webpage,
+        "read_connected_chrome": read_connected_chrome,
         "close_application": close_application,
         "desktop_time": desktop_time,
         "create_todo": create_todo,
@@ -1118,6 +1125,32 @@ class Agent:
                 if not isinstance(application, str) or not application.strip() or not isinstance(arguments_list, list):
                     return "tool 'launch_application' gagal: application string dan arguments array diperlukan."
                 result = handler(application=application, arguments=arguments_list)
+
+            elif name == "open_chrome":
+                url = arguments.get("url")
+                if not isinstance(url, str) or not url.strip():
+                    return "tool 'open_chrome' gagal: url wajib string dan tidak kosong."
+                result = handler(url=url)
+
+            elif name == "read_webpage":
+                url = arguments.get("url")
+                max_chars = arguments.get("max_chars", 8000)
+                if not isinstance(url, str) or not url.strip() or isinstance(max_chars, bool) or not isinstance(max_chars, int):
+                    return "tool 'read_webpage' gagal: url string dan max_chars integer diperlukan."
+                detail = arguments.get("detail", "compact")
+                if detail not in {"compact", "full"}:
+                    return "tool 'read_webpage' gagal: detail harus compact atau full."
+                result = handler(url=url, max_chars=max_chars, detail=detail)
+
+            elif name == "read_connected_chrome":
+                cdp_url = arguments.get("cdp_url", "http://127.0.0.1:9222")
+                max_chars = arguments.get("max_chars", 8000)
+                if not isinstance(cdp_url, str) or isinstance(max_chars, bool) or not isinstance(max_chars, int):
+                    return "tool 'read_connected_chrome' gagal: cdp_url string dan max_chars integer diperlukan."
+                detail = arguments.get("detail", "compact")
+                if detail not in {"compact", "full"}:
+                    return "tool 'read_connected_chrome' gagal: detail harus compact atau full."
+                result = handler(cdp_url=cdp_url, max_chars=max_chars, detail=detail)
 
             elif name == "close_application":
                 pid = arguments.get("pid")

@@ -9,8 +9,10 @@ from __future__ import annotations
 
 import json
 import queue
+import random
 import sys
 import threading
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -19,6 +21,9 @@ from typing import Any
 from agent import Agent
 from config import LLM_PROVIDER, PROJECT_ROOT, get_llm_config
 from tools.memory import delete_memory, list_memories, save_memory, update_memory
+from tools.planner import list_todos
+from tools.searxng import searxng_search
+import requests
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -93,12 +98,113 @@ def _save_session() -> None:
     _write_json(HISTORY_FILE, sessions[:100])
 
 
-def _settings() -> dict[str, str]:
+def _settings() -> dict[str, Any]:
     stored = _read_json(SETTINGS_FILE, {}) or {}
+    stored_location = str(stored.get("brief_location", "")).strip()
+    if not stored_location or stored_location.lower() == "jakarta":
+        stored_location = "Riau"
     return {
         "personalization": str(stored.get("personalization", "")),
         "system_prompt": str(stored.get("system_prompt", "")).strip() or SYSTEM_PROMPT,
+        "brief_enabled": bool(stored.get("brief_enabled", True)),
+        "brief_morning": str(stored.get("brief_morning", "08:00")),
+        "brief_evening": str(stored.get("brief_evening", "20:00")),
+        "brief_location": stored_location,
+        "voice_standby": bool(stored.get("voice_standby", False)),
+        "voice_tts": bool(stored.get("voice_tts", False)),
     }
+
+
+def _brief_weather(location: str) -> dict[str, Any]:
+    try:
+        response = requests.get(
+            f"https://wttr.in/{requests.utils.quote(location)}",
+            params={"format": "j1"},
+            headers={"User-Agent": "Astral/1.0"},
+            timeout=8,
+        )
+        response.raise_for_status()
+        current = (response.json().get("current_condition") or [{}])[0]
+        return {
+            "location": location,
+            "condition": (current.get("weatherDesc") or [{"value": "unknown"}])[0].get("value", "unknown"),
+            "temperature": current.get("temp_C", "?"),
+            "feels_like": current.get("FeelsLikeC", "?"),
+            "humidity": current.get("humidity", "?"),
+        }
+    except Exception as error:
+        return {"location": location, "error": str(error)}
+
+
+def _brief_news(now: datetime) -> list[dict[str, str]]:
+    try:
+        results = searxng_search(
+            f"berita terkini {now.strftime('%d %B %Y')} jam {now.strftime('%H')}",
+            max_results=6,
+            language="id-ID",
+            time_range="day",
+        )
+        valid = [item for item in results if item.get("title") and not item.get("error")]
+        random.Random(now.strftime("%Y-%m-%d-%H")).shuffle(valid)
+        return valid[:3]
+    except Exception:
+        return []
+
+
+def _build_work_brief() -> str:
+    now = datetime.now().astimezone()
+    settings = _settings()
+    todos = [item for item in list_todos("open") if isinstance(item, dict)]
+    weather = _brief_weather(settings["brief_location"])
+    news = _brief_news(now)
+    lines = [f"## Work brief · {now.strftime('%A, %d %B %Y · %H:%M')}", ""]
+    lines.append("### Fokus hari ini")
+    if todos:
+        for item in todos[:8]:
+            due = f" · due {item['due_at']}" if item.get("due_at") else ""
+            lines.append(f"- [ ] {item.get('title', 'Untitled')}{due}")
+        if len(todos) > 8:
+            lines.append(f"- … dan {len(todos) - 8} todo lainnya")
+    else:
+        lines.append("- Belum ada todo terbuka.")
+    lines.extend(["", "### Cuaca"])
+    if weather.get("error"):
+        lines.append(f"- {weather['location']}: data cuaca belum tersedia.")
+    else:
+        lines.append(f"- {weather['location']}: {weather['condition']}, {weather['temperature']}°C (terasa {weather['feels_like']}°C), kelembapan {weather['humidity']}%.")
+    lines.extend(["", "### Berita pilihan"])
+    if news:
+        for item in news:
+            lines.append(f"- [{item['title']}]({item.get('url', '')})")
+    else:
+        lines.append("- Berita belum tersedia; pastikan koneksi pencarian aktif.")
+    return "\n".join(lines)
+
+
+def _emit_work_brief() -> None:
+    try:
+        emit({"type": "scheduled_brief", "text": _build_work_brief()})
+    except Exception as error:
+        _record_error("Work brief gagal dibuat.", f"{type(error).__name__}: {error}")
+        emit({"type": "error", "message": "Work brief gagal dibuat.", "detail": str(error)})
+
+
+def _brief_scheduler() -> None:
+    last_slot = ""
+    while True:
+        try:
+            settings = _settings()
+            now = datetime.now().astimezone()
+            current = now.strftime("%H:%M")
+            for slot_name in ("brief_morning", "brief_evening"):
+                if settings.get("brief_enabled") and current == settings.get(slot_name):
+                    slot_key = f"{now.date()}:{slot_name}:{current}"
+                    if slot_key != last_slot:
+                        last_slot = slot_key
+                        threading.Thread(target=_emit_work_brief, daemon=True).start()
+            time.sleep(20)
+        except Exception:
+            time.sleep(30)
 
 
 def _system_content() -> str:
@@ -250,6 +356,7 @@ def main() -> None:
     always_allowed_tools.update(str(item) for item in stored_settings.get("always_allowed_tools", []) if item)
     emit({"type": "bridge_ready", "provider": current_provider, "model": agent.model, "session_id": current_session_id})
     threading.Thread(target=read_commands, daemon=True).start()
+    threading.Thread(target=_brief_scheduler, daemon=True).start()
 
     while True:
         command = commands.get()
@@ -311,10 +418,16 @@ def main() -> None:
             emit({"type": "settings", "settings": _settings()})
             continue
         if kind == "settings_save":
-            settings = {"personalization": str(command.get("personalization", "")), "system_prompt": str(command.get("system_prompt", "")).strip() or SYSTEM_PROMPT, "always_allowed_tools": sorted(always_allowed_tools)}
+            settings = {"personalization": str(command.get("personalization", "")), "system_prompt": str(command.get("system_prompt", "")).strip() or SYSTEM_PROMPT, "brief_enabled": bool(command.get("brief_enabled", True)), "brief_morning": str(command.get("brief_morning", "08:00")), "brief_evening": str(command.get("brief_evening", "20:00")), "brief_location": str(command.get("brief_location", "Riau")).strip() or "Riau", "voice_standby": bool(command.get("voice_standby", False)), "voice_tts": bool(command.get("voice_tts", False)), "always_allowed_tools": sorted(always_allowed_tools)}
             _write_json(SETTINGS_FILE, settings)
             messages[0] = {"role": "system", "content": _system_content()}
             emit({"type": "settings", "settings": settings})
+            continue
+        if kind == "work_brief":
+            if request_active:
+                emit({"type": "busy"})
+                continue
+            threading.Thread(target=_emit_work_brief, daemon=True).start()
             continue
         if kind == "error_log":
             emit({"type": "error_log", "items": _read_json(ERROR_LOG_FILE, [])})
@@ -356,6 +469,9 @@ def main() -> None:
             text = str(command.get("text", "")).strip()
             attachments = command.get("attachments", [])
             if not text and not attachments:
+                continue
+            if text.lower() in {"/brief", "/work-brief", "brief", "work brief"} and not attachments:
+                threading.Thread(target=_emit_work_brief, daemon=True).start()
                 continue
             image_parts = []
             if attachments:
